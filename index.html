@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-accent="indigo">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Analysis Dashboard — Bauhaus</title>
+<script src="[cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- Papa Parse: CSV parser -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+<link href="[fonts.googleapis.com](https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;600;700&display=swap)" rel="stylesheet">
+<style>
+  :root{
+    --accent:#4338ca; --accent-soft:#eef2ff;
+    --bg:#f4f1ea; --panel:#ffffff; --ink:#111111; --muted:#5b5b5b;
+    --line:#111111; --shadow:8px 8px 0 var(--accent);
+    --star:#111111;
+  }
+  html[data-accent="red"]     { --accent:#d92626; --accent-soft:#fdecec; }
+  html[data-accent="blue"]    { --accent:#1d4ed8; --accent-soft:#e8eeff; }
+  html[data-accent="yellow"]  { --accent:#c9a600; --accent-soft:#fdf7db; }
+  html[data-accent="indigo"]  { --accent:#4338ca; --accent-soft:#eef2ff; }
+  html[data-theme="dark"]{
+    --bg:#0d0d0f; --panel:#16161a; --ink:#f2f2f2; --muted:#a1a1aa;
+    --line:#f2f2f2; --star:#f2f2f2;
+  }
+  *{box-sizing:border-box}
+  body{
+    font-family:'Inconsolata', ui-monospace, monospace;
+    background:var(--bg); color:var(--ink);
+    margin:0; cursor:url("data:image/svg+xml;utf8,<svg xmlns='[w3.org](http://www.w3.org/2000/svg)' width='24' height='24' viewBox='0 0 24 24'><path d='M9 3a1.6 1.6 0 0 0-1.6 1.6v7.2L5.6 9.9a1.5 1.5 0 0 0-2.1 2.1l5 5.6A4 4 0 0 0 11.5 19h2.9A4.6 4.6 0 0 0 19 14.4V9a1.5 1.5 0 0 0-3 0V7.5a1.5 1.5 0 0 0-3 0V6.6A1.5 1.5 0 0 0 10 5.1V4.6A1.6 1.6 0 0 0 9 3z' fill='%23ffffff' stroke='%23111111' stroke-width='1.3' stroke-linejoin='round'/></svg>") 4 2, auto;
+    transition:background .3s, color .3s;
+  }
+  button, a, input, .card { cursor:url("data:image/svg+xml;utf8,<svg xmlns='[w3.org](http://www.w3.org/2000/svg)' width='24' height='24' viewBox='0 0 24 24'><path d='M9 3a1.6 1.6 0 0 0-1.6 1.6v7.2L5.6 9.9a1.5 1.5 0 0 0-2.1 2.1l5 5.6A4 4 0 0 0 11.5 19h2.9A4.6 4.6 0 0 0 19 14.4V9a1.5 1.5 0 0 0-3 0V7.5a1.5 1.5 0 0 0-3 0V6.6A1.5 1.5 0 0 0 10 5.1V4.6A1.6 1.6 0 0 0 9 3z' fill='%23ffd400' stroke='%23111111' stroke-width='1.3' stroke-linejoin='round'/></svg>") 4 2, pointer; }
+
+  /* ---------- BAUHAUS PRIMITIVES ---------- */
+  .bh-border{ border:2px solid var(--line); }
+  .bh-card{ background:var(--panel); border:2px solid var(--line); box-shadow:var(--shadow); }
+  .bh-btn{ border:2px solid var(--line); background:var(--panel); color:var(--ink); padding:.4rem .8rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; font-size:.75rem; transition:transform .12s, background .2s; }
+  .bh-btn:hover{ background:var(--accent); color:#fff; border-color:var(--accent); transform:translate(-2px,-2px); }
+  .bh-btn.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .bh-shape{ position:absolute; opacity:.35; pointer-events:none; }
+
+  /* ---------- STARS CANVAS ---------- */
+  #stars{ position:fixed; inset:0; z-index:0; pointer-events:none; }
+  .app{ position:relative; z-index:2; }
+
+  /* ---------- LOADER ---------- */
+  #loader{ position:fixed; inset:0; z-index:100; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.5rem; }
+  #loader.hidden{ display:none; }
+  .loader-geo{ display:flex; gap:14px; align-items:center; }
+  .loader-geo span{ width:22px; height:22px; border:2px solid var(--ink); animation:pop 1s infinite ease-in-out; }
+  .loader-geo span:nth-child(1){ background:var(--accent); border-radius:50%; }
+  .loader-geo span:nth-child(2){ background:transparent; animation-delay:.15s; }
+  .loader-geo span:nth-child(3){ background:var(--ink); clip-path:polygon(50% 0,100% 100%,0 100%); animation-delay:.3s; }
+  @keyframes pop{ 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-14px) scale(1.15)} }
+  .bar{ width:min(420px,80vw); height:14px; border:2px solid var(--line); background:var(--panel); }
+  .bar > i{ display:block; height:100%; width:0%; background:var(--accent); transition:width .18s linear; }
+
+  /* ---------- POPUP ---------- */
+  #popup{ position:fixed; z-index:60; max-width:330px; background:var(--panel); border:2px solid var(--line); box-shadow:var(--shadow); padding:1rem; font-size:.85rem; line-height:1.5; display:none; }
+  #popup.show{ display:block; animation:fadeIn .15s ease-out; }
+  #popup h4{ margin:0 0 .4rem; font-size:.95rem; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none} }
+
+  .kpi-value{ font-size:2rem; font-weight:700; }
+  .insight{ border-left:6px solid var(--accent); padding:.6rem .9rem; background:var(--accent-soft); }
+  .chart-box{ position:relative; height:340px; }
+  .switch{ width:56px; height:28px; border:2px solid var(--line); position:relative; background:var(--panel); }
+  .switch i{ position:absolute; top:1px; left:1px; width:22px; height:22px; background:var(--accent); transition:left .2s; }
+  .switch.on i{ left:29px; }
+  .chip{ border:2px solid var(--line); padding:.35rem .7rem; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700; }
+  .chip.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .swatch{ width:26px; height:26px; border:2px solid var(--line); }
+  section h3{ text-transform:uppercase; letter-spacing:.08em; font-size:.95rem; }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+
+<!-- ================= LOADER ================= -->
+<div id="loader">
+  <div class="loader-geo"><span></span><span></span><span></span></div>
+  <div style="font-weight:700;letter-spacing:.2em;text-transform:uppercase" id="loaderText">Initialize</div>
+  <div class="bar"><i id="loaderBar"></i></div>
+  <div style="font-size:.75rem;color:var(--muted)" id="loaderPct">0%</div>
+</div>
+
+<div class="app container mx-auto p-4 md:p-8">
+
+  <!-- ================= HEADER ================= -->
+  <header class="bh-card p-5 mb-6 relative overflow-hidden">
+    <div class="bh-shape" style="top:-20px;right:60px;width:70px;height:70px;border-radius:50%;background:var(--accent)"></div>
+    <div class="bh-shape" style="bottom:-18px;right:150px;width:60px;height:60px;border:2px solid var(--ink);transform:rotate(18deg)"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between;position:relative;z-index:1">
+      <div>
+        <h1 style="font-size:1.6rem;font-weight:700;letter-spacing:.02em" data-i18n="title">Sales Analysis Dashboard</h1>
+        <p style="color:var(--muted);font-size:.82rem" data-i18n="subtitle">Interactive performance overview · Bauhaus edition</p>
+      </div>
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+        <button class="chip" id="langBtn">EN / FR</button>
+        <button class="switch" id="themeSwitch" title="Dark / Light"><i></i></button>
+        <div style="display:flex;gap:.3rem;align-items:center">
+          <button class="swatch" data-accent="red"    style="background:#d92626"></button>
+          <button class="swatch" data-accent="blue"   style="background:#1d4ed8"></button>
+          <button class="swatch" data-accent="yellow" style="background:#c9a600"></button>
+          <button class="swatch" data-accent="indigo" style="background:#4338ca"></button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= UPLOAD ================= -->
+  <section class="bh-card p-5 mb-6">
+    <h3 data-i18n="uploadTitle">1. Load Sales Data</h3>
+    <p style="color:var(--muted);font-size:.8rem;margin:.4rem 0 .8rem" data-i18n="uploadHelp">
+      Select the <code>Sales Data.csv</code> file — or drop it here.
+    </p>
+    <div id="drop" class="bh-border" style="border-style:dashed;padding:1.1rem;text-align:center;background:var(--accent-soft)">
+      <input type="file" id="csv-file" accept=".csv" style="width:100%;font-size:.8rem">
+    </div>
+    <p id="status" style="margin-top:.7rem;font-size:.8rem;color:var(--muted)"></p>
+  </section>
+
+  <!-- ================= DASHBOARD ================= -->
+  <div id="dashboard" style="display:none">
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-6">
+      <div class="bh-card p-5 kpi hoverable" data-key="revenue">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)" data-i18n="kpiRevenue">Total Revenue</div>
+        <div class="kpi-value" id="total-revenue">$0</div>
+      </div>
+      <div class="bh-card p-5 kpi hoverable" data-key="orders">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)" data-i18n="kpiOrders">Total Orders</div>
+        <div class="kpi-value" id="total-orders">0</div>
+      </div>
+      <div class="bh-card p-5 kpi hoverable" data-key="aov">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)" data-i18n="kpiAov">Average Order Value</div>
+        <div class="kpi-value" id="avg-order-value">$0</div>
+      </div>
+      <div class="bh-card p-5 kpi hoverable" data-key="peak">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)" data-i18n="kpiPeak">Peak Hour</div>
+        <div class="kpi-value" id="peak-hour">--</div>
+      </div>
+    </div>
+
+    <!-- BUSINESS INSIGHTS -->
+    <section class="bh-card p-5 mb-6">
+      <h3 data-i18n="insightsTitle">Key Business Insights</h3>
+      <div id="insights" style="margin-top:.8rem;display:grid;gap:.6rem"></div>
+    </section>
+
+    <!-- CHARTS -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <section class="bh-card p-5 hoverable" data-key="month">
+        <h3 data-i18n="cMonth">Sales by Month</h3>
+        <div class="chart-box"><canvas id="salesByMonthChart"></canvas></div>
+      </section>
+      <section class="bh-card p-5 hoverable" data-key="products">
+        <h3 data-i18n="cProducts">Top 5 Products</h3>
+        <div class="chart-box"><canvas id="topProductsChart"></canvas></div>
+      </section>
+      <section class="bh-card p-5 hoverable" data-key="city">
+        <h3 data-i18n="cCity">Sales by City</h3>
+        <div class="chart-box"><canvas id="salesByCityChart"></canvas></div>
+      </section>
+      <section class="bh-card p-5 hoverable" data-key="hour">
+        <h3 data-i18n="cHour">Best Time for Ads</h3>
+        <div class="chart-box"><canvas id="salesByHourChart"></canvas></div>
+      </section>
+    </div>
+
+    <footer style="text-align:center;color:var(--muted);font-size:.72rem;margin-top:2rem" data-i18n="footer">
+      Built with vanilla HTML · CSS · JS — no backend, data stays in your browser.
+    </footer>
+  </div>
+</div>
+
+<div id="popup"></div>
+
+<script>
+/* =========================================================
+   0. STATE
+   ========================================================= */
+const state = {
+  lang: 'en',
+  data: null,
+  analytics: null
+};
+
+/* =========================================================
+   1. I18N DICTIONARY
+   ========================================================= */
+const I18N = {
+  en: {
+    title:"Sales Analysis Dashboard", subtitle:"Interactive performance overview · Bauhaus edition",
+    uploadTitle:"1. Load Sales Data", uploadHelp:"Select the Sales Data.csv file — or drop it here.",
+    kpiRevenue:"Total Revenue", kpiOrders:"Total Orders", kpiAov:"Average Order Value", kpiPeak:"Peak Hour",
+    insightsTitle:"Key Business Insights", cMonth:"Sales by Month", cProducts:"Top 5 Products",
+    cCity:"Sales by City", cHour:"Best Time for Ads",
+    footer:"Built with vanilla HTML · CSS · JS — no backend, data stays in your browser.",
+    loading:"Loading & processing…", ready:"Loaded: {rows} rows", empty:"No valid sales rows found.",
+    peak:"Peak activity at {h}:00", low:"Lowest activity at {h}:00",
+    best:"Top city: {c} ({v})", product:"Best seller: {p} ({q} units)",
+    avgMonth:"Average monthly revenue: {v}", margin:"Ads should run 11:00–13:00 and 19:00–21:00 for max reach.",
+    popRev:"Gross revenue across all valid orders in the uploaded file. This is the single most important top-line number: it tells you the total size of the business for the period.",
+    popOrd:"Count of unique Order IDs — a customer may buy several items in one order, so this is the true number of transactions, not the number of rows.",
+    popAov:"Revenue divided by number of orders. Rising AOV means customers are buying more expensive items or larger baskets — a lever you can push with bundles and upsells.",
+    popPeak:"Hour of the day with the highest order volume. Use it to schedule ads, staffing and flash sales when buyers are actually active.",
+    popMonth:"Bars show revenue per month. Look for the peak (best campaign month) and the trough (seasonal dip to recover). Compare to plan your promotions and inventory.",
+    popProducts:"Horizontal bars = units sold per product for the 5 best sellers. These are the items to keep in stock, feature on the homepage and never discount heavily.",
+    popCity:"Doughnut split of revenue per city. A wide slice = a strong market to defend; thin slices are expansion opportunities or markets to deprioritise.",
+    popHour:"Line chart of orders per hour of day. The peak is the optimal ad slot. Traffic before the peak is the warm-up window for reach campaigns.",
+    shape:"Bauhaus × Data · Each block is one idea, exactly as it should be."
+  },
+  fr: {
+    title:"Tableau d'Analyse des Ventes", subtitle:"Aperçu interactif des performances · édition Bauhaus",
+    uploadTitle:"1. Charger les données", uploadHelp:"Sélectionnez le fichier Sales Data.csv — ou déposez-le ici.",
+    kpiRevenue:"Chiffre d'affaires", kpiOrders:"Commandes", kpiAov:"Panier moyen", kpiPeak:"Heure de pointe",
+    insightsTitle:"Analyses métier clés", cMonth:"Ventes par mois", cProducts:"Top 5 produits",
+    cCity:"Ventes par ville", cHour:"Meilleur créneau pub",
+    footer:"HTML · CSS · JS natif — aucun serveur, vos données restent dans le navigateur.",
+    loading:"Chargement et traitement…", ready:"Chargé : {rows} lignes", empty:"Aucune ligne de vente valide.",
+    peak:"Pic d'activité à {h}:00", low:"Activité minimale à {h}:00",
+    best:"Ville principale : {c} ({v})", product:"Meilleure vente : {p} ({q} unités)",
+    avgMonth:"CA mensuel moyen : {v}", margin:"Diffusez les pubs de 11:00–13:00 et 19:00–21:00 pour une portée maximale.",
+    popRev:"Chiffre d'affaires brut de toutes les commandes valides. C'est l'indicateur principal : il mesure la taille réelle de l'activité sur la période.",
+    popOrd:"Nombre de commandes uniques (Order ID). Un client peut acheter plusieurs articles en une commande : c'est le vrai nombre de transactions.",
+    popAov:"Chiffre d'affaires ÷ nombre de commandes. Un panier moyen en hausse signifie des achats plus chers ou plus volumineux — activez les bundles et upsells.",
+    popPeak:"Heure de la journée avec le plus de commandes. Servez-vous-en pour planifier les pubs, le personnel et les ventes flash.",
+    popMonth:"Barres = CA par mois. Repérez le pic (meilleur mois de campagne) et le creux saisonnier à relancer. À comparer pour planifier promos et stocks.",
+    popProducts:"Barres horizontales = unités vendues pour les 5 meilleures ventes. À garder en stock, à mettre en avant et à ne pas brader.",
+    popCity:"Répartition du CA par ville. Une part large = marché à défendre ; les parts fines sont des pistes d'expansion ou à déprioriser.",
+    popHour:"Courbe des commandes par heure. Le pic = meilleur créneau publicitaire. L'heure précédente sert de fenêtre de notoriété.",
+    shape:"Bauhaus × Données · Chaque bloc est une idée, exactement comme il faut."
+  }
+};
+const t = (k) => I18N[state.lang][k] || k;
+const fmt = (s, o={}) => s.replace(/\{(\w+)\}/g, (_, k) => o[k] ?? '');
+
+/* =========================================================
+   2. LOADER INTRO
+   ========================================================= */
+(function loader(){
+  const steps = [
+    {txt:'Initialize',  p:18},
+    {txt:'Geometry',    p:42},
+    {txt:'Loading libs',p:68},
+    {txt:'Ready',       p:100}
+  ];
+  const bar = document.getElementById('loaderBar');
+  const pct = document.getElementById('loaderPct');
+  const txt = document.getElementById('loaderText');
+  let i = 0;
+  const run = () => {
+    if (i >= steps.length){
+      setTimeout(()=> document.getElementById('loader').classList.add('hidden'), 350);
+      return;
+    }
+    bar.style.width = steps[i].p + '%';
+    pct.textContent = steps[i].p + '%';
+    txt.textContent = steps[i].txt;
+    i++;
+    setTimeout(run, 420);
+  };
+  run();
+})();
+
+/* =========================================================
+   3. MICRO-STARS BACKGROUND (mouse-reactive)
+   ========================================================= */
+(function stars(){
+  const c = document.getElementById('stars');
+  const x = c.getContext('2d');
+  let w, h, stars = [], mouse = {x:-9999, y:-9999};
+
+  const resize = () => {
+    w = c.width = innerWidth; h = c.height = innerHeight;
+    const count = Math.min(180, Math.round((w*h)/12000));
+    stars = Array.from({length:count}, () => ({
+      x: Math.random()*w, y: Math.random()*h,
+      r: Math.random()*1.6 + .4,
+      vx: (Math.random()-.5)*.25, vy: (Math.random()-.5)*.25
+    }));
+  };
+
+  addEventListener('resize', resize);
+  addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+  addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; });
+
+  const draw = () => {
+    x.clearRect(0,0,w,h);
+    const color = getComputedStyle(document.body).getPropertyValue('--star').trim() || '#111';
+    for (const s of stars){
+      s.x += s.vx; s.y += s.vy;
+      if (s.x < 0) s.x = w; if (s.x > w) s.x = 0;
+      if (s.y < 0) s.y = h; if (s.y > h) s.y = 0;
+
+      // mouse reaction: push away within 130px
+      const dx = s.x - mouse.x, dy = s.y - mouse.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < 16900){
+        const d = Math.sqrt(d2) || 1;
+        const f = (130 - d)/130;
+        s.x += (dx/d)*f*2.2;
+        s.y += (dy/d)*f*2.2;
+      }
+      x.beginPath();
+      x.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      x.fillStyle = color;
+      x.globalAlpha = .55;
+      x.fill();
+    }
+    x.globalAlpha = 1;
+    requestAnimationFrame(draw);
+  };
+  resize(); draw();
+})();
+
+/* =========================================================
+   4. THEME / LANGUAGE / ACCENT
+   ========================================================= */
+const html = document.documentElement;
+document.getElementById('themeSwitch').addEventListener('click', function(){
+  this.classList.toggle('on');
+  const dark = this.classList.contains('on');
+  html.setAttribute('data-theme', dark ? 'dark' : 'light');
+  rerenderCharts();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  state.lang = state.lang === 'en' ? 'fr' : 'en';
+  applyI18N();
+  if (state.analytics) renderInsights();
+});
+document.querySelectorAll('.swatch').forEach(b => b.addEventListener('click', () => {
+  html.setAttribute('data-accent', b.dataset.accent);
+  rerenderCharts();
+}));
+
+function applyI18N(){
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+}
+
+/* =========================================================
+   5. FILE INPUT
+   ========================================================= */
+const drop = document.getElementById('drop');
+const statusEl = document.getElementById('status');
+document.getElementById('csv-file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (f) loadCSV(f);
+});
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.style.background = 'var(--accent)'; drop.style.color = '#fff';
+}));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.style.background = 'var(--accent-soft)'; drop.style.color = 'var(--ink)';
+}));
+drop.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0]; if (f) loadCSV(f);
+});
+
+function loadCSV(file){
+  statusEl.textContent = t('loading');
+  Papa.parse(file, {
+    header: true, dynamicTyping: true, skipEmptyLines: true,
+    complete: res => {
+      state.data = res.data;
+      const ok = analyze(res.data);
+      if (!ok){ statusEl.textContent = t('empty'); return; }
+      statusEl.textContent = fmt(t('ready'), {rows: res.data.length});
+      document.getElementById('dashboard').style.display = 'block';
+      renderAll();
+    },
+    error: () => { statusEl.textContent = 'Error: invalid CSV file.'; }
+  });
+}
+
+/* =========================================================
+   6. ANALYTICS ENGINE (easy reasoning, no magic)
+   ========================================================= */
+function analyze(data){
+  const clean = data.filter(r => r && typeof r['Sales'] === 'number' && isFinite(r['Sales']));
+  if (!clean.length) return false;
+
+  const totalRevenue = clean.reduce((s, r) => s + r['Sales'], 0);
+  const totalOrders  = new Set(clean.map(r => r['Order ID'])).size;
+  const aov          = totalOrders ? totalRevenue/totalOrders : 0;
+
+  // by month
+  const months = {};
+  clean.forEach(r => {
+    const m = r['Month'];
+    if (m >= 1 && m <= 12) months[m] = (months[m]||0) + r['Sales'];
+  });
+
+  // by product (units)
+  const products = {};
+  clean.forEach(r => {
+    if (r['Product'] && r['Quantity Ordered'])
+      products[r['Product']] = (products[r['Product']]||0) + r['Quantity Ordered'];
+  });
+
+  // by city
+  const cities = {};
+  clean.forEach(r => {
+    if (r['City'] && r['Sales']) cities[r['City']] = (cities[r['City']]||0) + r['Sales'];
+  });
+
+  // by hour (order counts)
+  const hours = Array(24).fill(0);
+  clean.forEach(r => {
+    if (r['Hour'] >= 0 && r['Hour'] <= 23) hours[r['Hour']]++;
+  });
+
+  state.analytics = { clean, totalRevenue, totalOrders, aov, months, products, cities, hours };
+  return true;
+}
+
+/* =========================================================
+   7. RENDER
+   ========================================================= */
+const MONTHS = {en:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+                fr:["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"]};
+
+function money(v){ return '$' + v.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+function renderAll(){
+  const a = state.analytics;
+  document.getElementById('total-revenue').textContent = money(a.totalRevenue);
+  document.getElementById('total-orders').textContent = a.totalOrders.toLocaleString('en-US');
+  document.getElementById('avg-order-value').textContent = money(a.aov);
+  const peak = a.hours.indexOf(Math.max(...a.hours));
+  document.getElementById('peak-hour').textContent = peak + ':00';
+
+  renderInsights();
+
+  const mKeys = Object.keys(a.months).sort((x,y)=>x-y);
+  renderChart('salesByMonthChart','bar', mKeys.map(k=>MONTHS.en[k-1]), mKeys.map(k=>a.months[k]), 'Revenue');
+
+  const p = Object.entries(a.products).sort(([,x],[,y])=>y-x).slice(0,5);
+  renderChart('topProductsChart','bar', p.map(([n])=>n), p.map(([,q])=>q), 'Units', {indexAxis:'y'});
+
+  const c = Object.entries(a.cities).sort(([,x],[,y])=>y-x);
+  renderChart('salesByCityChart','doughnut', c.map(([n])=>n), c.map(([,v])=>v), 'Revenue');
+
+  renderChart('salesByHourChart','line',
+    Array.from({length:24},(_,i)=>i+':00'), a.hours, 'Orders');
+}
+
+function renderInsights(){
+  const a = state.analytics; if (!a) return;
+  const box = document.getElementById('insights');
+  const peak = a.hours.indexOf(Math.max(...a.hours));
+  const low  = a.hours.indexOf(Math.min(...a.hours));
+  const topCity = Object.entries(a.cities).sort(([,x],[,y])=>y-x)[0];
+  const topProd = Object.entries(a.products).sort(([,x],[,y])=>y-x)[0];
+  const months = Object.keys(a.months).length;
+  const avgM = months ? a.totalRevenue/months : 0;
+
+  const list = [
+    fmt(t('peak'), {h: peak}),
+    fmt(t('low'),  {h: low}),
+    fmt(t('best'), {c: topCity?.[0], v: money(topCity?.[1]||0)}),
+    fmt(t('product'), {p: topProd?.[0], q: topProd?.[1]}),
+    fmt(t('avgMonth'), {v: money(avgM)}),
+    t('margin')
+  ];
+  box.innerHTML = list.map(s => `<div class="insight">${s}</div>`).join('');
+}
+
+/* ---------- Chart.js ---------- */
+const chartInstances = {};
+function accentColor(alpha=1){
+  const hex = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function inkColor(){
+  return getComputedStyle(document.body).getPropertyValue('--ink').trim() || '#111';
+}
+function rerenderCharts(){
+  if (!state.analytics) return;
+  // give CSS vars a tick to update
+  setTimeout(renderAll, 30);
+}
+const PALETTE = ['rgba(217,38,38,.75)','rgba(29,78,216,.75)','rgba(201,166,0,.85)',
+                 'rgba(67,56,202,.75)','rgba(17,17,17,.7)','rgba(120,120,120,.7)'];
+
+function renderChart(id, type, labels, data, label, options={}){
+  if (chartInstances[id]) chartInstances[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  const solid = type === 'doughnut' || type === 'line';
+  chartInstances[id] = new Chart(ctx, {
+    type,
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data,
+        backgroundColor: solid ? PALETTE : accentColor(.8),
+        borderColor: type === 'line' ? accentColor(1) : inkColor(),
+        borderWidth: 2,
+        tension: .25,
+        pointBackgroundColor: accentColor(1),
+        pointRadius: type === 'line' ? 3 : 0,
+        fill: type === 'line' ? false : undefined
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      ...options,
+      plugins: {
+        legend: { display: type === 'doughnut',
+          labels: { color: inkColor(), font: { family: 'Inconsolata' } } },
+        tooltip: { titleFont: { family: 'Inconsolata' }, bodyFont: { family: 'Inconsolata' } }
+      },
+      scales: type === 'doughnut' ? {} : {
+        x: { ticks: { color: inkColor(), font:{family:'Inconsolata'} }, grid: { color: accentColor(.15) } },
+        y: { ticks: { color: inkColor(), font:{family:'Inconsolata'} }, grid: { color: accentColor(.15) } }
+      }
+    }
+  });
+}
+
+/* =========================================================
+   8. POP-UP EXPLAINERS
+   ========================================================= */
+const popup = document.getElementById('popup');
+const POP = {
+  revenue:'popRev', orders:'popOrd', aov:'popAov', peak:'popPeak',
+  month:'popMonth', products:'popProducts', city:'popCity', hour:'popHour'
+};
+document.querySelectorAll('.hoverable').forEach(el => {
+  el.addEventListener('mouseenter', e => {
+    const key = POP[el.dataset.key]; if (!key) return;
+    popup.innerHTML = `<h4>${el.querySelector('h3,div')?.textContent || ''}</h4><p>${t(key)}</p>`;
+    popup.classList.add('show');
+  });
+  el.addEventListener('mousemove', e => {
+    const pad = 18;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if (x + 340 > innerWidth)  x = e.clientX - 340 - pad;
+    if (y + 180 > innerHeight) y = e.clientY - 180 - pad;
+    popup.style.left = Math.max(8,x) + 'px';
+    popup.style.top  = Math.max(8,y) + 'px';
+  });
+  el.addEventListener('mouseleave', () => popup.classList.remove('show'));
+});
+
+/* =========================================================
+   9. INIT
+   ========================================================= */
+applyI18N();
+</script>
+</body>
+</html>
